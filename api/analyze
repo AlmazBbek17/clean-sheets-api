@@ -1,0 +1,179 @@
+// API endpoint для анализа данных через OpenRouter
+const fetch = require('node-fetch');
+
+// Ваш API ключ OpenRouter - ВАЖНО: замените на свой!
+const OPENROUTER_API_KEY = process.env.OPENROUTER_API_KEY || 'YOUR_API_KEY_HERE';
+
+// Модель для использования
+const MODEL = 'openai/gpt-4o-mini';
+
+// Типы проблем, которые ИИ будет искать
+const PROBLEM_TYPES = {
+  WHITESPACE: 'Лишние пробелы',
+  PHONE_FORMAT: 'Формат телефона',
+  DATE_FORMAT: 'Формат даты',
+  NUMBER_FORMAT: 'Формат числа',
+  CASE_INCONSISTENCY: 'Непоследовательный регистр',
+  SPECIAL_CHARS: 'Спецсимволы',
+  DUPLICATE: 'Дубликат',
+  MIXED_DATA: 'Смешанные данные',
+  OTHER: 'Другое',
+};
+
+module.exports = async (req, res) => {
+  // Включаем CORS для расширения
+  res.setHeader('Access-Control-Allow-Origin', '*');
+  res.setHeader('Access-Control-Allow-Methods', 'POST, OPTIONS');
+  res.setHeader('Access-Control-Allow-Headers', 'Content-Type');
+
+  // Обработка preflight запроса
+  if (req.method === 'OPTIONS') {
+    res.status(200).end();
+    return;
+  }
+
+  if (req.method !== 'POST') {
+    res.status(405).json({ error: 'Method not allowed' });
+    return;
+  }
+
+  try {
+    const { data } = req.body;
+
+    if (!data || !Array.isArray(data)) {
+      res.status(400).json({ error: 'Invalid data format' });
+      return;
+    }
+
+    console.log('Analyzing', data.length, 'cells');
+
+    // Формируем промпт для ИИ
+    const prompt = createAnalysisPrompt(data);
+
+    // Отправляем запрос в OpenRouter
+    const response = await fetch('https://openrouter.ai/api/v1/chat/completions', {
+      method: 'POST',
+      headers: {
+        'Authorization': `Bearer ${OPENROUTER_API_KEY}`,
+        'Content-Type': 'application/json',
+        'HTTP-Referer': 'https://clean-sheets.app', // Замените на ваш домен
+        'X-Title': 'Clean Sheets AI',
+      },
+      body: JSON.stringify({
+        model: MODEL,
+        messages: [
+          {
+            role: 'system',
+            content: `Ты эксперт по очистке данных в таблицах. Твоя задача - найти проблемы в данных и предложить исправления.
+
+Типы проблем, которые нужно искать:
+1. Лишние пробелы (в начале, конце, двойные пробелы)
+2. Неправильные форматы телефонов (приводить к виду 8(XXX)XXX-XX-XX)
+3. Неправильные форматы дат
+4. Числа записаны как текст
+5. Непоследовательная капитализация имён
+6. Невидимые спецсимволы
+7. Смешанные данные в одной ячейке
+
+ВАЖНО: Возвращай ТОЛЬКО JSON массив, без дополнительного текста.
+
+Формат ответа:
+[
+  {
+    "row": 5,
+    "col": 2,
+    "type": "Формат телефона",
+    "oldValue": "+7999123-4567",
+    "newValue": "8(999)123-45-67",
+    "confidence": 0.95
+  }
+]
+
+Если проблем нет - верни пустой массив [].`,
+          },
+          {
+            role: 'user',
+            content: prompt,
+          },
+        ],
+        temperature: 0.3,
+        max_tokens: 4000,
+      }),
+    });
+
+    if (!response.ok) {
+      const errorText = await response.text();
+      console.error('OpenRouter error:', errorText);
+      throw new Error(`OpenRouter API error: ${response.status}`);
+    }
+
+    const result = await response.json();
+    
+    // Извлекаем ответ ИИ
+    const aiResponse = result.choices[0].message.content;
+    
+    console.log('AI Response:', aiResponse);
+
+    // Парсим JSON ответ
+    let issues = [];
+    try {
+      // Убираем markdown блоки если есть
+      const jsonText = aiResponse.replace(/```json\n?|\n?```/g, '').trim();
+      issues = JSON.parse(jsonText);
+    } catch (parseError) {
+      console.error('JSON parse error:', parseError);
+      console.error('AI response was:', aiResponse);
+      issues = [];
+    }
+
+    // Фильтруем только уверенные исправления (confidence > 0.7)
+    const filteredIssues = issues.filter(issue => 
+      !issue.confidence || issue.confidence > 0.7
+    );
+
+    console.log('Found', filteredIssues.length, 'issues');
+
+    res.status(200).json({
+      success: true,
+      issues: filteredIssues,
+    });
+
+  } catch (error) {
+    console.error('API Error:', error);
+    res.status(500).json({
+      success: false,
+      error: error.message,
+    });
+  }
+};
+
+// Создать промпт для анализа
+function createAnalysisPrompt(data) {
+  // Ограничиваем количество ячеек (чтобы не превысить лимит токенов)
+  const maxCells = 200;
+  const limitedData = data.slice(0, maxCells);
+
+  let prompt = 'Проанализируй следующие данные из Google Sheets и найди проблемы:\n\n';
+  
+  limitedData.forEach(cell => {
+    const colLetter = colIndexToLetter(cell.col);
+    prompt += `${colLetter}${cell.row}: "${cell.value}"\n`;
+  });
+
+  if (data.length > maxCells) {
+    prompt += `\n(Показаны первые ${maxCells} из ${data.length} ячеек)`;
+  }
+
+  return prompt;
+}
+
+// Конвертировать индекс колонки в букву
+function colIndexToLetter(col) {
+  let letter = '';
+  while (col > 0) {
+    const remainder = (col - 1) % 26;
+    letter = String.fromCharCode(65 + remainder) + letter;
+    col = Math.floor((col - 1) / 26);
+  }
+  return letter;
+}
