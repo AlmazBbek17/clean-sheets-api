@@ -2,7 +2,7 @@
 const fetch = require('node-fetch');
 
 // Ваш API ключ OpenRouter - ВАЖНО: замените на свой!
-const OPENROUTER_API_KEY = process.env.OPENROUTER_API_KEY;
+const OPENROUTER_API_KEY = process.env.OPENROUTER_API_KEY || 'YOUR_API_KEY_HERE';
 
 // Модель для использования
 const MODEL = 'openai/gpt-4o-mini';
@@ -21,10 +21,14 @@ const PROBLEM_TYPES = {
 };
 
 module.exports = async (req, res) => {
-  // Включаем CORS для расширения
+  // Включаем CORS для расширения и Chrome Extensions
   res.setHeader('Access-Control-Allow-Origin', '*');
-  res.setHeader('Access-Control-Allow-Methods', 'POST, OPTIONS');
-  res.setHeader('Access-Control-Allow-Headers', 'Content-Type');
+  res.setHeader('Access-Control-Allow-Methods', 'GET, POST, PUT, DELETE, OPTIONS');
+  res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization, X-Requested-With');
+  res.setHeader('Access-Control-Max-Age', '86400'); // 24 hours
+  
+  // Специальные заголовки для Chrome Extensions
+  res.setHeader('Access-Control-Allow-Credentials', 'true');
 
   // Обработка preflight запроса
   if (req.method === 'OPTIONS') {
