@@ -2,7 +2,7 @@
 const fetch = require('node-fetch');
 
 // Ваш API ключ OpenRouter - ВАЖНО: замените на свой!
-const OPENROUTER_API_KEY = process.env.OPENROUTER_API_KEY || 'YOUR_API_KEY_HERE';
+const OPENROUTER_API_KEY = process.env.OPENROUTER_API_KEY || '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';
 
 // Модель для использования
 const MODEL = 'openai/gpt-4o-mini';
