@@ -1,6 +1,6 @@
 / Clean Sheets AI - Vercel API
 // API key is stored safely in Vercel environment variables
-
+const fetch = require('node-fetch');
 module.exports = async (req, res) => {
 
   // CORS headers
