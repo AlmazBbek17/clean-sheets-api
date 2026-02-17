@@ -1,4 +1,4 @@
-// Clean Sheets AI - Vercel API
+/ Clean Sheets AI - Vercel API
 // API key is stored safely in Vercel environment variables
 
 module.exports = async (req, res) => {
